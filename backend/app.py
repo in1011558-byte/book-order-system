@@ -23,8 +23,13 @@ app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'sqlite:///dat
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # CORS設定
-CORS(app, resources={r"/api/*": {"origins": "*"}})
-
+CORS(app, resources={
+    r"/api/*": {
+        "origins": ["http://localhost:5174", "https://book-order-frontend.onrender.com"],
+        "methods": ["GET", "POST", "PUT", "DELETE"],
+        "allow_headers": ["Content-Type", "Authorization"]
+    }
+})
 # データベース初期化
 db.init_app(app)
 
