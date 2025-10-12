@@ -6,7 +6,7 @@ services:
     region: oregon
     plan: free
     buildCommand: "cd backend && pip install -r requirements.txt"
-    startCommand: "cd backend && gunicorn app:app"
+    startCommand: "cd backend && gunicorn --bind 0.0.0.0:$PORT app:app"
     envVars:
       - key: SECRET_KEY
         generateValue: true
@@ -17,14 +17,15 @@ services:
       - key: ADMIN_PASSWORD
         value: admin123
 
-  # フロントエンド (React)
+  # フロントエンド (静的サイト)
   - type: web
     name: book-order-frontend
-    env: node
+    env: static
     region: oregon
     plan: free
     buildCommand: "cd frontend && npm install && npm run build"
     staticPublishPath: frontend/dist
-    envVars:
-      - key: VITE_API_URL
-        value: https://book-order-backend.onrender.com/api
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
