@@ -23,10 +23,12 @@ app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'sqlite:///dat
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # CORS設定
+# CORS設定
 CORS(app, 
      resources={r"/api/*": {"origins": "*"}},
      allow_headers=["Content-Type", "Authorization"],
-     methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
+     methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+     supports_credentials=True)
 # データベース初期化
 db.init_app(app)
 
