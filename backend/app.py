@@ -22,21 +22,13 @@ app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your-default-secret-key-for-
 app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'sqlite:///database.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-# --- ▼▼▼ CORS設定を修正 ▼▼▼ ---
-# フロントエンドのデプロイ先URLを明示的に許可します。
-CORS(app, resources={
-    r"/api/*": {
-        "origins": [
-            "https://book-order-frontend.onrender.com", # フロントエンドのURL
-            "http://localhost:5174", # ローカル開発環境
-            "http://localhost:5173", # ローカル開発環境
-            "http://localhost:3000"  # ローカル開発環境
-        ],
-        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-        "allow_headers": ["Content-Type", "Authorization"],
-        "supports_credentials": True
-    }
-} )
+# CORS設定 - シンプル版
+@app.after_request
+def after_request(response):
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization'
+    response.headers['Access-Control-Allow-Methods'] = 'GET,POST,PUT,DELETE,OPTIONS'
+    return response
 
 db.init_app(app)
 
