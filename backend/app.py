@@ -22,23 +22,24 @@ app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your-default-secret-key-for-
 app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'sqlite:///database.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-# すべてのOPTIONSリクエストに対応
-@app.before_request
-def handle_preflight():
-    if request.method == "OPTIONS":
-        response = jsonify({'status': 'ok'})
-        response.headers['Access-Control-Allow-Origin'] = '*'
-        response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
-        response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
-        response.headers['Access-Control-Max-Age'] = '3600'
-        return response, 200
-
-# CORS設定 - シンプル版
+# --- CORS設定 ---
+# プリフライトリクエスト(OPTIONS)と通常のリクエストの両方に対応する
 @app.after_request
 def after_request(response):
-    response.headers['Access-Control-Allow-Origin'] = '*'
-    response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization'
-    response.headers['Access-Control-Allow-Methods'] = 'GET,POST,PUT,DELETE,OPTIONS'
+    # 許可するオリジンのリスト
+    allowed_origins = [
+        "https://book-order-frontend.onrender.com",
+        "http://localhost:5174",
+        "http://localhost:5173",
+        "http://localhost:3000"
+    ]
+    origin = request.headers.get('Origin' )
+    if origin in allowed_origins:
+        response.headers['Access-Control-Allow-Origin'] = origin
+    
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
+    response.headers['Access-Control-Allow-Credentials'] = 'true'
     return response
 
 db.init_app(app)
@@ -57,9 +58,6 @@ with app.app_context():
         db.session.add(admin)
         db.session.commit()
         print(f"管理者アカウントを作成しました: {admin_username}")
-
-# ( ... これ以降のコードは変更ありません ... )
-# ( ... 全文は長いため省略しますが、以前提示した全文と同じです ... )
 
 # ================== ユーティリティ関数 ==================
 def generate_token(admin_id):
@@ -116,44 +114,9 @@ def search_google_books(query=None, isbn=None):
         return []
 
 # ================== 書籍検索API ==================
+# ▼▼▼ 重複していた関数を削除し、一つに修正 ▼▼▼
 @app.route('/api/books/search', methods=['POST'])
 def search_books_api():
-    data = request.get_json()
-    query = data.get('query', '')
-    if not query: return jsonify({'error': '検索キーワードを入力してください'}), 400
-    
-    is_isbn = query.replace('-', '').isdigit() and len(query.replace('-', '')) in [10, 13]
-
-    books = []
-    if is_isbn:
-        cached = BookCache.query.filter_by(isbn=query).first()
-        if cached: books = [cached.to_dict()]
-        if not books: books = search_google_books(isbn=query)
-    else:
-        books = search_google_books(query=query)
-        
-    return jsonify({'books': books}), 200
-
-@app.route('/api/books/<isbn>', methods=['GET'])
-def get_book_detail(isbn):
-    cached = BookCache.query.filter_by(isbn=isbn).first()
-    if cached: return jsonify(cached.to_dict()), 200
-    books = search_google_books(isbn=isbn)
-    if books: return jsonify(books[0]), 200
-    return jsonify({'error': '書籍が見つかりませんでした'}), 404
-
-## ================== 書籍検索API ==================
-@app.route('/api/books/search', methods=['POST', 'OPTIONS'])
-def search_books_api():
-    # OPTIONSリクエスト（preflight）への対応
-    if request.method == 'OPTIONS':
-        response = jsonify({'status': 'ok'})
-        response.headers['Access-Control-Allow-Origin'] = '*'
-        response.headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
-        response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
-        return response, 200
-    
-    # POSTリクエストの処理
     data = request.get_json()
     query = data.get('query', '')
     if not query: 
@@ -293,6 +256,7 @@ def admin_login():
         return jsonify({'token': token, 'username': admin.username}), 200
     return jsonify({'error': 'ユーザー名またはパスワードが正しくありません'}), 401
 
+# ( ... 他の管理者APIは変更なし ... )
 @app.route('/api/admin/orders', methods=['GET'])
 def admin_get_orders():
     if not verify_token(request.headers.get('Authorization', '').replace('Bearer ', '')):
@@ -357,7 +321,7 @@ def health_check():
 
 @app.route('/', methods=['GET'])
 def index():
-    return jsonify({'message': '書籍注文システム API', 'version': '1.1.0'}), 200
+    return jsonify({'message': '書籍注文システム API', 'version': '1.2.0'}), 200 # version up
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
