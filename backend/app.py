@@ -142,7 +142,7 @@ def get_book_detail(isbn):
     if books: return jsonify(books[0]), 200
     return jsonify({'error': '書籍が見つかりませんでした'}), 404
 
-# ================== 注文API ==================
+## ================== 書籍検索API ==================
 @app.route('/api/books/search', methods=['POST', 'OPTIONS'])
 def search_books_api():
     # OPTIONSリクエスト（preflight）への対応
@@ -156,20 +156,77 @@ def search_books_api():
     # POSTリクエストの処理
     data = request.get_json()
     query = data.get('query', '')
-    if not query: return jsonify({'error': '検索キーワードを入力してください'}), 400
-    ...
-        customer = Customer.query.filter_by(name=customer_name, email=customer_data.get('email')).first()
+    if not query: 
+        return jsonify({'error': '検索キーワードを入力してください'}), 400
+    
+    is_isbn = query.replace('-', '').isdigit() and len(query.replace('-', '')) in [10, 13]
+
+    books = []
+    if is_isbn:
+        cached = BookCache.query.filter_by(isbn=query).first()
+        if cached: 
+            books = [cached.to_dict()]
+        if not books: 
+            books = search_google_books(isbn=query)
+    else:
+        books = search_google_books(query=query)
+        
+    return jsonify({'books': books}), 200
+
+@app.route('/api/books/<isbn>', methods=['GET'])
+def get_book_detail(isbn):
+    cached = BookCache.query.filter_by(isbn=isbn).first()
+    if cached: 
+        return jsonify(cached.to_dict()), 200
+    books = search_google_books(isbn=isbn)
+    if books: 
+        return jsonify(books[0]), 200
+    return jsonify({'error': '書籍が見つかりませんでした'}), 404
+
+# ================== 注文API ==================
+@app.route('/api/orders', methods=['POST'])
+def create_order():
+    try:
+        data = request.get_json()
+        customer_data = data.get('customer', {})
+        customer_name = customer_data.get('name', '')
+        
+        if not customer_name:
+            return jsonify({'error': '顧客名は必須です'}), 400
+        
+        customer = Customer.query.filter_by(
+            name=customer_name, 
+            email=customer_data.get('email')
+        ).first()
+        
         if not customer:
-            customer = Customer(name=customer_name, email=customer_data.get('email'), phone=customer_data.get('phone'), organization=customer_data.get('organization'))
+            customer = Customer(
+                name=customer_name, 
+                email=customer_data.get('email'), 
+                phone=customer_data.get('phone'), 
+                organization=customer_data.get('organization')
+            )
             db.session.add(customer)
             db.session.flush()
 
-        order = Order(customer_id=customer.id, notes=data.get('notes', ''), total_items=len(data.get('items', [])))
+        order = Order(
+            customer_id=customer.id, 
+            notes=data.get('notes', ''), 
+            total_items=len(data.get('items', []))
+        )
         db.session.add(order)
         db.session.flush()
 
         for item_data in data.get('items', []):
-            item = OrderItem(order_id=order.id, **item_data)
+            item = OrderItem(
+                order_id=order.id,
+                isbn=item_data.get('isbn', ''),
+                title=item_data.get('title', ''),
+                author=item_data.get('author', ''),
+                publisher=item_data.get('publisher', ''),
+                quantity=item_data.get('quantity', 1),
+                thumbnail=item_data.get('thumbnail', '')
+            )
             db.session.add(item)
         
         db.session.commit()
