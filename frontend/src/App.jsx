@@ -10,14 +10,11 @@ const API = {
   },
   
   async searchBooks(query, type = 'title') {
-  const response = await fetch(`${API_BASE_URL}/books/search`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query, type })
-  });
-  return response.json();
-},
-      
+    const response = await fetch(`${API_BASE_URL}/books/search`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query, type })
+    });
     return response.json();
   },
   
@@ -42,49 +39,6 @@ const API = {
     });
     return response.json();
   },
-  
-  async adminGetOrders() {
-    const response = await fetch(`${API_BASE_URL}/admin/orders`, {
-      headers: {
-        'Authorization': `Bearer ${authToken}`,
-      },
-    });
-    return response.json();
-  },
-  
-  async adminGetCustomers() {
-    const response = await fetch(`${API_BASE_URL}/admin/customers`, {
-      headers: {
-        'Authorization': `Bearer ${authToken}`,
-      },
-    });
-    return response.json();
-  },
-  
-  async adminGetCustomerOrders(customerId) {
-    const response = await fetch(`${API_BASE_URL}/admin/customer/${customerId}/orders`, {
-      headers: {
-        'Authorization': `Bearer ${authToken}`,
-      },
-    });
-    return response.json();
-  },
-  
-  async adminExportCSV() {
-    const response = await fetch(`${API_BASE_URL}/admin/export/csv`, {
-      headers: {
-        'Authorization': `Bearer ${authToken}`,
-      },
-    });
-    return response.blob();
-  },
-  
-  async adminExportExcel() {
-    const response = await fetch(`${API_BASE_URL}/admin/export/excel`, {
-      headers: {
-        'Authorization': `Bearer ${authToken}`,
-      },
-    });
     return response.blob();
   },
 };
