@@ -11,10 +11,12 @@ class Customer(db.Model):
     name = db.Column(db.String(100), nullable=False)
     email = db.Column(db.String(100))
     phone = db.Column(db.String(20))
-    organization = db.Column(db.String(100))  # 学校名・塾名
+    organization = db.Column(db.String(100))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
     orders = db.relationship('Order', backref='customer', lazy=True, cascade='all, delete-orphan')
+    # WishlistItemとの関連付けを追加
+    wishlist_items = db.relationship('WishlistItem', backref='customer', lazy=True, cascade='all, delete-orphan')
     
     def to_dict(self):
         return {
@@ -33,7 +35,7 @@ class Order(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     customer_id = db.Column(db.Integer, db.ForeignKey('customers.id'), nullable=False)
     order_date = db.Column(db.DateTime, default=datetime.utcnow)
-    status = db.Column(db.String(20), default='pending')  # pending, confirmed, shipped, completed
+    status = db.Column(db.String(20), default='pending')
     total_items = db.Column(db.Integer, default=0)
     notes = db.Column(db.Text)
     
@@ -95,7 +97,7 @@ class Admin(db.Model):
         }
 
 class BookCache(db.Model):
-    """書籍キャッシュ（検索結果の保存）"""
+    """書籍キャッシュ"""
     __tablename__ = 'book_cache'
     
     id = db.Column(db.Integer, primary_key=True)
@@ -117,4 +119,32 @@ class BookCache(db.Model):
             'published_date': self.published_date,
             'thumbnail': self.thumbnail,
             'description': self.description
+        }
+
+class WishlistItem(db.Model):
+    """一時リスト（ウィッシュリスト）のアイテム"""
+    __tablename__ = 'wishlist_items'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    customer_id = db.Column(db.Integer, db.ForeignKey('customers.id'), nullable=False)
+    isbn = db.Column(db.String(20), nullable=False)
+    title = db.Column(db.String(200), nullable=False)
+    author = db.Column(db.String(200))
+    publisher = db.Column(db.String(100))
+    thumbnail = db.Column(db.String(500))
+    added_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    # 複合ユニーク制約: 同じ顧客が同じ本を複数追加できないようにする
+    __table_args__ = (db.UniqueConstraint('customer_id', 'isbn', name='_customer_isbn_uc'),)
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'customer_id': self.customer_id,
+            'isbn': self.isbn,
+            'title': self.title,
+            'author': self.author,
+            'publisher': self.publisher,
+            'thumbnail': self.thumbnail,
+            'added_at': self.added_at.isoformat()
         }
