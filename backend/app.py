@@ -22,6 +22,17 @@ app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your-default-secret-key-for-
 app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'sqlite:///database.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
+# すべてのOPTIONSリクエストに対応
+@app.before_request
+def handle_preflight():
+    if request.method == "OPTIONS":
+        response = jsonify({'status': 'ok'})
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+        response.headers['Access-Control-Max-Age'] = '3600'
+        return response, 200
+
 # CORS設定 - シンプル版
 @app.after_request
 def after_request(response):
@@ -132,14 +143,21 @@ def get_book_detail(isbn):
     return jsonify({'error': '書籍が見つかりませんでした'}), 404
 
 # ================== 注文API ==================
-@app.route('/api/orders', methods=['POST'])
-def create_order():
-    try:
-        data = request.get_json()
-        customer_data = data.get('customer', {})
-        customer_name = customer_data.get('name')
-        if not customer_name: return jsonify({'error': '顧客名は必須です'}), 400
-
+@app.route('/api/books/search', methods=['POST', 'OPTIONS'])
+def search_books_api():
+    # OPTIONSリクエスト（preflight）への対応
+    if request.method == 'OPTIONS':
+        response = jsonify({'status': 'ok'})
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        response.headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+        return response, 200
+    
+    # POSTリクエストの処理
+    data = request.get_json()
+    query = data.get('query', '')
+    if not query: return jsonify({'error': '検索キーワードを入力してください'}), 400
+    ...
         customer = Customer.query.filter_by(name=customer_name, email=customer_data.get('email')).first()
         if not customer:
             customer = Customer(name=customer_name, email=customer_data.get('email'), phone=customer_data.get('phone'), organization=customer_data.get('organization'))
