@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 
-const API_BASE_URL = 'https://book-order-backend-6uzl.onrender.com';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
 let authToken = null;
 
@@ -10,11 +10,13 @@ const API = {
   },
   
   async searchBooks(query, type = 'title') {
-    const response = await fetch(`${API_BASE_URL}/books/search`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+  const response = await fetch(`${API_BASE_URL}/books/search`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query, type })
+  });
+  return response.json();
+}
       body: JSON.stringify({ query, type }),
     });
     return response.json();
