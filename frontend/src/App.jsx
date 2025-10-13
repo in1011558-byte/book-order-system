@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+const API_BASE_URL = 'https://book-order-backend-6uzl.onrender.com/api';
 
 let authToken = null;
 
@@ -21,9 +21,7 @@ const API = {
   async createOrder(orderData) {
     const response = await fetch(`${API_BASE_URL}/orders`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(orderData),
     });
     return response.json();
@@ -32,62 +30,47 @@ const API = {
   async adminLogin(username, password) {
     const response = await fetch(`${API_BASE_URL}/admin/login`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username, password }),
     });
     return response.json();
   },
+  
+  async adminGetOrders() {
+    const response = await fetch(`${API_BASE_URL}/admin/orders`, {
+      headers: { 'Authorization': `Bearer ${authToken}` },
+    });
+    return response.json();
+  },
+  
+  async adminGetCustomers() {
+    const response = await fetch(`${API_BASE_URL}/admin/customers`, {
+      headers: { 'Authorization': `Bearer ${authToken}` },
+    });
+    return response.json();
+  },
+  
+  async adminGetCustomerOrders(customerId) {
+    const response = await fetch(`${API_BASE_URL}/admin/customer/${customerId}/orders`, {
+      headers: { 'Authorization': `Bearer ${authToken}` },
+    });
+    return response.json();
+  },
+  
+  async adminExportCSV() {
+    const response = await fetch(`${API_BASE_URL}/admin/export/csv`, {
+      headers: { 'Authorization': `Bearer ${authToken}` },
+    });
+    return response.blob();
+  },
+  
+  async adminExportExcel() {
+    const response = await fetch(`${API_BASE_URL}/admin/export/excel`, {
+      headers: { 'Authorization': `Bearer ${authToken}` },
+    });
     return response.blob();
   },
 };
-
-function App() {
-  // ページ管理
-  const [currentPage, setCurrentPage] = useState('search');
-  
-  // カート
-  const [cart, setCart] = useState([]);
-  
-  // 検索
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchType, setSearchType] = useState('title');
-  const [searchResults, setSearchResults] = useState([]);
-  const [isSearching, setIsSearching] = useState(false);
-  
-  // 注文
-  const [customerName, setCustomerName] = useState('');
-  const [customerEmail, setCustomerEmail] = useState('');
-  const [customerPhone, setCustomerPhone] = useState('');
-  const [customerOrg, setCustomerOrg] = useState('');
-  const [orderNotes, setOrderNotes] = useState('');
-  
-  // 管理者
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [adminUsername, setAdminUsername] = useState('');
-  const [adminPassword, setAdminPassword] = useState('');
-  const [orders, setOrders] = useState([]);
-  const [customers, setCustomers] = useState([]);
-  const [selectedCustomer, setSelectedCustomer] = useState(null);
-
-  // ローカルストレージからカートを読み込み
-  useEffect(() => {
-    const savedCart = localStorage.getItem('bookCart');
-    if (savedCart) {
-      setCart(JSON.parse(savedCart));
-    }
-  }, []);
-
-  // カートをローカルストレージに保存
-  useEffect(() => {
-    localStorage.setItem('bookCart', JSON.stringify(cart));
-  }, [cart]);
-
-  // ==================== 書籍検索 ====================
-  
-  const handleSearch = async () => {
-    if (!searchQuery.trim()) {
       alert('検索キーワードを入力してください');
       return;
     }
