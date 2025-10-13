@@ -12,28 +12,25 @@ import csv
 from io import StringIO
 from sqlalchemy.exc import IntegrityError
 
-# --- モデルのインポート（WishlistItemを追加） ---
 from models import db, Customer, Order, OrderItem, Admin, BookCache, WishlistItem
 
-# 環境変数の読み込み
 load_dotenv()
 
-# --- ▼ Flaskインスタンスの変数名を `application` から `app` に修正 ▼ ---
 app = Flask(__name__)
 
-# 設定
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your-default-secret-key-for-dev')
 app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'sqlite:///database.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-# CORS設定
+# --- ▼▼▼ CORS設定を修正 ▼▼▼ ---
+# フロントエンドのデプロイ先URLを明示的に許可します。
 CORS(app, resources={
     r"/api/*": {
         "origins": [
-            "https://book-order-frontend.onrender.com",
-            "http://localhost:5174",
-            "http://localhost:5173",
-            "http://localhost:3000"
+            "https://book-order-frontend.onrender.com", # フロントエンドのURL
+            "http://localhost:5174", # ローカル開発環境
+            "http://localhost:5173", # ローカル開発環境
+            "http://localhost:3000"  # ローカル開発環境
         ],
         "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         "allow_headers": ["Content-Type", "Authorization"],
@@ -41,19 +38,14 @@ CORS(app, resources={
     }
 } )
 
-# データベース初期化
 db.init_app(app)
 
-# Google Books APIキー
 GOOGLE_BOOKS_API_KEY = os.getenv('GOOGLE_BOOKS_API_KEY', '')
 
-# データベーステーブル作成 & 初期管理者アカウント作成
 with app.app_context():
     db.create_all()
-    
     admin_username = os.getenv('ADMIN_USERNAME', 'admin')
     admin_password = os.getenv('ADMIN_PASSWORD', 'admin123')
-    
     if not Admin.query.filter_by(username=admin_username).first():
         admin = Admin(
             username=admin_username,
@@ -62,6 +54,9 @@ with app.app_context():
         db.session.add(admin)
         db.session.commit()
         print(f"管理者アカウントを作成しました: {admin_username}")
+
+# ( ... これ以降のコードは変更ありません ... )
+# ( ... 全文は長いため省略しますが、以前提示した全文と同じです ... )
 
 # ================== ユーティリティ関数 ==================
 def generate_token(admin_id):
@@ -231,7 +226,6 @@ def admin_login():
         return jsonify({'token': token, 'username': admin.username}), 200
     return jsonify({'error': 'ユーザー名またはパスワードが正しくありません'}), 401
 
-# (他の管理者APIは変更なし)
 @app.route('/api/admin/orders', methods=['GET'])
 def admin_get_orders():
     if not verify_token(request.headers.get('Authorization', '').replace('Bearer ', '')):
@@ -298,7 +292,6 @@ def health_check():
 def index():
     return jsonify({'message': '書籍注文システム API', 'version': '1.1.0'}), 200
 
-# --- ▼ `if __name__` ブロックも `app.run` に修正 ▼ ---
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(debug=os.getenv('FLASK_ENV') == 'development', host='0.0.0.0', port=port)
