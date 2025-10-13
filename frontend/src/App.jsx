@@ -16,9 +16,8 @@ const API = {
     body: JSON.stringify({ query, type })
   });
   return response.json();
-}
-      body: JSON.stringify({ query, type }),
-    });
+},
+      
     return response.json();
   },
   
