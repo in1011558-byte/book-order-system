@@ -24,11 +24,8 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # CORS設定
 # CORS設定
-CORS(app, 
-     resources={r"/api/*": {"origins": "*"}},
-     allow_headers=["Content-Type", "Authorization"],
-     methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-     supports_credentials=True)
+# CORS設定 - シンプル版（すべて許可）
+CORS(app)
 # データベース初期化
 db.init_app(app)
 
