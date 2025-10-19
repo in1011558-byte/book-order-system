@@ -6,4 +6,6 @@ requests==2.31.0
 PyJWT==2.8.0
 openpyxl==3.1.2
 Pillow==10.0.0
-waitress==2.1.2  # gunicornから変更
+waitress==2.1.2
+reportlab==4.0.4
+Werkzeug==3.0.1

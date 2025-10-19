@@ -80,6 +80,37 @@ class OrderItem(db.Model):
             'thumbnail': self.thumbnail
         }
 
+class User(db.Model):
+    """一般ユーザーアカウント"""
+    __tablename__ = 'users'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(50), unique=True, nullable=False)
+    email = db.Column(db.String(100), unique=True, nullable=False)
+    password_hash = db.Column(db.String(200), nullable=False)
+    full_name = db.Column(db.String(100))
+    organization = db.Column(db.String(100))
+    phone = db.Column(db.String(20))
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    last_login = db.Column(db.DateTime)
+    
+    # 選書リストとの関係
+    selection_lists = db.relationship('BookSelectionList', backref='user', lazy=True, cascade='all, delete-orphan')
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'username': self.username,
+            'email': self.email,
+            'full_name': self.full_name,
+            'organization': self.organization,
+            'phone': self.phone,
+            'is_active': self.is_active,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'last_login': self.last_login.isoformat() if self.last_login else None
+        }
+
 class Admin(db.Model):
     """管理者アカウント"""
     __tablename__ = 'admins'
@@ -108,6 +139,12 @@ class BookCache(db.Model):
     published_date = db.Column(db.String(20))
     thumbnail = db.Column(db.String(500))
     description = db.Column(db.Text)
+    # 分類・フィルタリング用フィールド
+    target_audience = db.Column(db.String(50))  # 利用対象（未就学、小学校低学年、中学生等）
+    genre = db.Column(db.String(50))  # ジャンル（事典・辞書、国際理解、社会科等）
+    price = db.Column(db.Float)  # 税別価格
+    volume_count = db.Column(db.Integer, default=1)  # 全巻数
+    is_set_only = db.Column(db.Boolean, default=False)  # セットのみ販売
     cached_at = db.Column(db.DateTime, default=datetime.utcnow)
     
     def to_dict(self):
@@ -118,11 +155,81 @@ class BookCache(db.Model):
             'publisher': self.publisher,
             'published_date': self.published_date,
             'thumbnail': self.thumbnail,
-            'description': self.description
+            'description': self.description,
+            'target_audience': self.target_audience,
+            'genre': self.genre,
+            'price': self.price,
+            'volume_count': self.volume_count,
+            'is_set_only': self.is_set_only
+        }
+
+class BookSelectionList(db.Model):
+    """選書リスト"""
+    __tablename__ = 'book_selection_lists'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    name = db.Column(db.String(100), nullable=False)  # リスト名
+    description = db.Column(db.Text)  # リストの説明
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # リストアイテムとの関係
+    items = db.relationship('BookSelectionItem', backref='book_list', lazy=True, cascade='all, delete-orphan')
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'user_id': self.user_id,
+            'name': self.name,
+            'description': self.description,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+            'items_count': len(self.items),
+            'total_quantity': sum(item.quantity for item in self.items),
+            'total_amount': sum((item.price or 0) * item.quantity for item in self.items),
+            'items': [item.to_dict() for item in self.items]
+        }
+
+class BookSelectionItem(db.Model):
+    """選書リストのアイテム"""
+    __tablename__ = 'book_selection_items'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    list_id = db.Column(db.Integer, db.ForeignKey('book_selection_lists.id'), nullable=False)
+    isbn = db.Column(db.String(20), nullable=False)
+    title = db.Column(db.String(200), nullable=False)
+    author = db.Column(db.String(200))
+    publisher = db.Column(db.String(100))
+    price = db.Column(db.Float)  # 税別価格
+    volume_count = db.Column(db.Integer, default=1)  # 全巻数（セット商品用）
+    is_set_only = db.Column(db.Boolean, default=False)  # セットのみ販売
+    thumbnail = db.Column(db.String(500))
+    quantity = db.Column(db.Integer, default=1)  # 選択数量
+    added_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    # 複合ユニーク制約: 同じリストに同じ本は1つまで
+    __table_args__ = (db.UniqueConstraint('list_id', 'isbn', name='_list_isbn_uc'),)
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'list_id': self.list_id,
+            'isbn': self.isbn,
+            'title': self.title,
+            'author': self.author,
+            'publisher': self.publisher,
+            'price': self.price,
+            'volume_count': self.volume_count,
+            'is_set_only': self.is_set_only,
+            'thumbnail': self.thumbnail,
+            'quantity': self.quantity,
+            'added_at': self.added_at.isoformat() if self.added_at else None,
+            'subtotal': (self.price or 0) * self.quantity
         }
 
 class WishlistItem(db.Model):
-    """一時リスト（ウィッシュリスト）のアイテム"""
+    """一時リスト（ウィッシュリスト）のアイテム - 後方互換性のために残す"""
     __tablename__ = 'wishlist_items'
     
     id = db.Column(db.Integer, primary_key=True)
