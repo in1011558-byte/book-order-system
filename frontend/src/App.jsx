@@ -28,6 +28,8 @@ function App() {
   // Rankings
   const [popularBooks, setPopularBooks] = useState([]);
   const [selectionRankings, setSelectionRankings] = useState([]);
+  const [selectedGenre, setSelectedGenre] = useState('児童書'); // Default genre
+  const [genreBooks, setGenreBooks] = useState({});
   
   // Selection limit warning
   const [selectionLimit, setSelectionLimit] = useState(2);
@@ -53,6 +55,7 @@ function App() {
     }
     loadPopularBooks();
     loadSelectionRankings();
+    loadGenreBooks('児童書'); // Load default genre
   }, []);
 
   // Load popular books
@@ -64,6 +67,32 @@ function App() {
       setPopularBooks((result.books || []).slice(0, 10));
     } catch (error) {
       console.error('人気書籍読み込みエラー:', error);
+    }
+  };
+
+  // Load genre-specific books
+  const loadGenreBooks = async (genre) => {
+    if (genreBooks[genre]) {
+      return; // Already loaded
+    }
+    
+    const genreQueries = {
+      '児童書': '児童書',
+      'マンガ': 'マンガ',
+      '小説': '小説',
+      'ビジネス書': 'ビジネス書',
+      '絵本': '絵本',
+      '実用書': '実用書'
+    };
+    
+    try {
+      const result = await API.searchBooks(genreQueries[genre] || genre);
+      setGenreBooks(prev => ({
+        ...prev,
+        [genre]: (result.books || []).slice(0, 10)
+      }));
+    } catch (error) {
+      console.error(`${genre}読み込みエラー:`, error);
     }
   };
 
@@ -205,7 +234,7 @@ function App() {
   // Admin handlers
   const handleAdminLogin = () => {
     const adminPassword = prompt('管理者パスワードを入力してください:');
-    if (adminPassword === 'admin123') {
+    if (adminPassword === 'ADMIN123') {
       setIsAdmin(true);
       loadAllUsersData();
       setSuccessMessage('管理者としてログインしました');
@@ -572,12 +601,34 @@ function App() {
         {/* Home Page */}
         {currentPage === 'home' && (
           <div className="text-center">
-            {/* Popular Books Ranking - Moved to top */}
-            {popularBooks.length > 0 && (
-              <div className="mb-16">
-                <h3 className="text-3xl font-bold text-gray-900 mb-8">📚 人気書籍ランキング</h3>
+            {/* Genre-based Ranking - Moved to top */}
+            <div className="mb-16">
+              <h3 className="text-3xl font-bold text-gray-900 mb-6">📚 ジャンル別ランキング</h3>
+              
+              {/* Genre Navigation */}
+              <div className="flex flex-wrap gap-2 mb-8">
+                {['児童書', 'マンガ', '小説', 'ビジネス書', '絵本', '実用書'].map(genre => (
+                  <button
+                    key={genre}
+                    onClick={() => {
+                      setSelectedGenre(genre);
+                      loadGenreBooks(genre);
+                    }}
+                    className={`px-4 py-2 rounded-lg font-medium transition ${
+                      selectedGenre === genre
+                        ? 'bg-indigo-600 text-white'
+                        : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+                    }`}
+                  >
+                    {genre}
+                  </button>
+                ))}
+              </div>
+
+              {/* Genre Books Display */}
+              {genreBooks[selectedGenre] && genreBooks[selectedGenre].length > 0 && (
                 <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                  {popularBooks.map((book, index) => (
+                  {genreBooks[selectedGenre].map((book, index) => (
                     <div key={book.isbn} className="bg-white rounded-lg shadow-md p-4 hover:shadow-lg transition">
                       <div className="relative">
                         <div className="absolute -top-2 -left-2 bg-indigo-600 text-white rounded-full w-8 h-8 flex items-center justify-center font-bold">
@@ -587,7 +638,7 @@ function App() {
                           <img 
                             src={book.thumbnail} 
                             alt={book.title}
-                            className="w-full h-48 object-cover rounded mb-3"
+                            className="w-full h-36 object-cover rounded mb-3"
                           />
                         )}
                       </div>
@@ -613,8 +664,16 @@ function App() {
                     </div>
                   ))}
                 </div>
-              </div>
-            )}
+              )}
+              
+              {/* Loading state */}
+              {!genreBooks[selectedGenre] && (
+                <div className="text-center py-12">
+                  <div className="text-4xl mb-4">📖</div>
+                  <p className="text-gray-500">読み込み中...</p>
+                </div>
+              )}
+            </div>
 
             {/* Selection Rankings */}
             {selectionRankings.length > 0 && (
@@ -632,7 +691,7 @@ function App() {
                           <img 
                             src={book.thumbnail} 
                             alt={book.title}
-                            className="w-full h-48 object-cover rounded mb-3"
+                            className="w-full h-36 object-cover rounded mb-3"
                           />
                         )}
                       </div>
@@ -882,7 +941,7 @@ function App() {
                 {searchResults.map((book, index) => (
                   <div key={index} className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-xl transition">
                     {book.thumbnail && (
-                      <img src={book.thumbnail} alt={book.title} className="w-full h-64 object-cover" />
+                      <img src={book.thumbnail} alt={book.title} className="w-full h-48 object-cover" />
                     )}
                     <div className="p-4">
                       <h3 className="font-bold text-lg mb-2 line-clamp-2">{book.title}</h3>
@@ -943,7 +1002,7 @@ function App() {
                 {wishlist.map((item, index) => (
                   <div key={index} className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-xl transition">
                     {item.thumbnail && (
-                      <img src={item.thumbnail} alt={item.title} className="w-full h-64 object-cover" />
+                      <img src={item.thumbnail} alt={item.title} className="w-full h-48 object-cover" />
                     )}
                     <div className="p-4">
                       <h3 className="font-bold text-lg mb-2 line-clamp-2">{item.title}</h3>
@@ -1094,7 +1153,7 @@ function App() {
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="flex items-center">
                             {item.thumbnail && (
-                              <img src={item.thumbnail} alt={item.title} className="w-12 h-16 object-cover mr-3" />
+                              <img src={item.thumbnail} alt={item.title} className="w-10 h-12 object-cover mr-3" />
                             )}
                             <div>
                               <div className="text-sm font-medium text-gray-900 max-w-xs truncate">{item.title}</div>
