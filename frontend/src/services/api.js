@@ -1,250 +1,358 @@
-import { useState, useEffect } from 'react';
-import API from './services/api'; // api.jsをインポート
+// Google Books API integration with localStorage-based data management
+const GOOGLE_BOOKS_API = 'https://www.googleapis.com/books/v1/volumes';
+const MAX_RESULTS = 40;
+const MAX_PAGES = 5;
 
-function App() {
-  // --- State定義 ---
-  const [currentPage, setCurrentPage] = useState('search');
-  const [cart, setCart] = useState([]);
-  const [wishlist, setWishlist] = useState([]); // ★ウィッシュリスト用のStateを追加
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchType, setSearchType] = useState('title');
-  const [searchResults, setSearchResults] = useState([]);
-  const [isSearching, setIsSearching] = useState(false);
-  const [customerName, setCustomerName] = useState('');
-  const [customerEmail, setCustomerEmail] = useState('');
-  const [customerPhone, setCustomerPhone] = useState('');
-  const [customerOrg, setCustomerOrg] = useState('');
-  const [orderNotes, setOrderNotes] = useState('');
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [adminUsername, setAdminUsername] = useState('');
-  const [adminPassword, setAdminPassword] = useState('');
-  const [orders, setOrders] = useState([]);
-  const [customers, setCustomers] = useState([]);
-  const [selectedCustomer, setSelectedCustomer] = useState(null);
-  const [errorMessage, setErrorMessage] = useState('');
-  
-  // ★顧客IDを仮で設定（本来はログイン機能などで管理）
-  const CUSTOMER_ID = 1; 
+// Helper function to get user-specific data key
+const getUserDataKey = (baseKey) => {
+  const token = localStorage.getItem('authToken');
+  return token ? `${baseKey}_${token}` : baseKey;
+};
 
-  // --- useEffect ---
-  useEffect(() => {
-    // カート情報をローカルストレージから読み込み
-    try {
-      const savedCart = window.localStorage.getItem('bookCart');
-      if (savedCart) setCart(JSON.parse(savedCart));
-    } catch (error) { console.error('Failed to load cart:', error); }
+// ================== Google Books Search ==================
+const searchBooks = async (query, searchType = 'title') => {
+  const trimmedQuery = query.trim();
+  if (!trimmedQuery) {
+    return { books: [], total: 0 };
+  }
+
+  // Multiple search strategies to find ALL available books
+  const searchStrategies = [
+    { q: trimmedQuery, label: '基本検索', maxPages: 3 },
+    { q: `intitle:${trimmedQuery}`, label: 'タイトル検索', maxPages: 2 },
+    { q: `${trimmedQuery} 巻`, label: '巻数検索', maxPages: 1 }
+  ];
+
+  const allBooks = new Map(); // Use Map to deduplicate by ISBN
+
+  for (const strategy of searchStrategies) {
+    console.log(`Searching with strategy: ${strategy.label}`);
     
-    // ★ウィッシュリストをAPIから読み込み
-    fetchWishlist();
-  }, []);
-
-  useEffect(() => {
-    // カート情報をローカルストレージに保存
-    try {
-      window.localStorage.setItem('bookCart', JSON.stringify(cart));
-    } catch (error) { console.error('Failed to save cart:', error); }
-  }, [cart]);
-
-  // --- API呼び出し関数 ---
-  const handleSearch = async () => {
-    if (!searchQuery.trim()) { alert('検索キーワードを入力してください'); return; }
-    setIsSearching(true);
-    setErrorMessage('');
-    try {
-      const data = await API.searchBooks(searchQuery, searchType);
-      setSearchResults(data.books || []);
-      if (!data.books || data.books.length === 0) { alert('検索結果が見つかりませんでした'); }
-    } catch (error) {
-      const errorMsg = 'バックエンドサーバーに接続できません。サーバーが起動しているか、CORSが正しく設定されているか確認してください。';
-      setErrorMessage(errorMsg);
-      alert(errorMsg);
-      console.error('Search failed:', error);
-    } finally {
-      setIsSearching(false);
-    }
-  };
-
-  // ★ウィッシュリスト取得処理
-  const fetchWishlist = async () => {
-    try {
-      const data = await API.getWishlist(CUSTOMER_ID);
-      setWishlist(data || []);
-    } catch (error) {
-      console.error('Failed to fetch wishlist:', error);
-    }
-  };
-
-  // ★ウィッシュリスト追加処理
-  const handleAddToWishlist = async (book) => {
-    try {
-      await API.addToWishlist(CUSTOMER_ID, book);
-      alert('ウィッシュリストに追加しました');
-      fetchWishlist(); // リストを再取得して更新
-    } catch (error) {
-      alert('ウィッシュリストへの追加に失敗しました');
-      console.error('Failed to add to wishlist:', error);
-    }
-  };
-
-  // ★ウィッシュリスト削除処理
-  const handleRemoveFromWishlist = async (itemId) => {
-    if (window.confirm('この本をウィッシュリストから削除しますか？')) {
+    // Fetch multiple pages for each strategy
+    const pagesToFetch = strategy.maxPages || MAX_PAGES;
+    for (let page = 0; page < pagesToFetch; page++) {
+      const startIndex = page * MAX_RESULTS;
+      const url = `${GOOGLE_BOOKS_API}?q=${encodeURIComponent(strategy.q)}&maxResults=${MAX_RESULTS}&startIndex=${startIndex}&langRestrict=ja`;
+      
       try {
-        await API.removeFromWishlist(itemId);
-        alert('削除しました');
-        fetchWishlist(); // リストを再取得して更新
+        const response = await fetch(url);
+        
+        // Check if response is OK
+        if (!response.ok) {
+          console.warn(`API returned ${response.status} for ${strategy.label}`);
+          if (response.status === 429 || response.status === 423) {
+            // Rate limit or locked - wait and skip to next strategy
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            break;
+          }
+          break;
+        }
+        
+        const data = await response.json();
+        
+        if (!data.items || data.items.length === 0) {
+          break; // No more results for this strategy
+        }
+
+        data.items.forEach(item => {
+          const volumeInfo = item.volumeInfo;
+          const saleInfo = item.saleInfo;
+          
+          // Extract ISBNs
+          const isbns = volumeInfo.industryIdentifiers || [];
+          const isbn13 = isbns.find(id => id.type === 'ISBN_13')?.identifier;
+          const isbn10 = isbns.find(id => id.type === 'ISBN_10')?.identifier;
+          const isbn = isbn13 || isbn10 || item.id;
+
+          // Only add if not already present (deduplicate)
+          if (!allBooks.has(isbn)) {
+            allBooks.set(isbn, {
+              isbn,
+              title: volumeInfo.title || '不明',
+              author: (volumeInfo.authors || ['不明']).join(', '),
+              publisher: volumeInfo.publisher || '不明',
+              publishedDate: volumeInfo.publishedDate || '',
+              description: volumeInfo.description || '',
+              thumbnail: volumeInfo.imageLinks?.thumbnail || '',
+              price: saleInfo?.listPrice?.amount || 0,
+              currency: saleInfo?.listPrice?.currencyCode || 'JPY',
+              pageCount: volumeInfo.pageCount || 0,
+              categories: (volumeInfo.categories || []).join(', ')
+            });
+          }
+        });
       } catch (error) {
-        alert('削除に失敗しました');
-        console.error('Failed to remove from wishlist:', error);
+        console.error(`Error in strategy ${strategy.label}:`, error);
       }
     }
-  };
+  }
 
-  // --- カート関連の関数 ---
-  const addToCart = (book, quantity = 1) => {
-    const existing = cart.find(item => item.isbn === book.isbn);
-    if (existing) {
-      setCart(cart.map(item =>
-        item.isbn === book.isbn ? { ...item, quantity: item.quantity + quantity } : item
-      ));
-    } else {
-      setCart([...cart, { ...book, quantity }]);
-    }
-  };
-
-  const handleMoveToCart = (book) => {
-    addToCart(book);
-    alert(`${book.title} をカートに追加しました。`);
-  };
-
-  const removeFromCart = (isbn) => {
-    setCart(cart.filter(item => item.isbn !== isbn));
-  };
-
-  const updateQuantity = (isbn, newQuantity) => {
-    if (newQuantity < 1) {
-      removeFromCart(isbn);
-    } else {
-      setCart(cart.map(item =>
-        item.isbn === isbn ? { ...item, quantity: newQuantity } : item
-      ));
-    }
-  };
+  const books = Array.from(allBooks.values());
+  console.log(`Total unique books found: ${books.length}`);
   
-  // (他の既存関数は変更なし)
-  const clearCart = () => { if (window.confirm('カートを空にしますか？')) { setCart([]); } };
-  const handleOrderSubmit = async () => { /* ...変更なし... */ };
-  const handleAdminLogin = async () => { /* ...変更なし... */ };
-  const handleAdminLogout = () => { /* ...変更なし... */ };
-  const loadAdminData = async () => { /* ...変更なし... */ };
-  const handleExportCSV = async () => { /* ...変更なし... */ };
-  const handleExportExcel = async () => { /* ...変更なし... */ };
-  const viewCustomerOrders = async (customerId) => { /* ...変更なし... */ };
+  return {
+    books,
+    total: books.length
+  };
+};
 
-  return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-indigo-600 text-white shadow-lg">
-        <div className="max-w-7xl mx-auto px-4 py-4">
-          <h1 className="text-2xl font-bold">📚 書籍注文システム</h1>
-        </div>
-      </header>
+// ================== User Authentication ==================
+const register = (userData) => {
+  try {
+    // Check if user already exists
+    const users = JSON.parse(localStorage.getItem('users') || '[]');
+    if (users.find(u => u.username === userData.username || u.email === userData.email)) {
+      return { error: 'ユーザー名またはメールアドレスが既に使用されています' };
+    }
 
-      <nav className="bg-white shadow-md">
-        <div className="max-w-7xl mx-auto px-4">
-          <div className="flex space-x-4 py-3">
-            {/* --- ナビゲーション --- */}
-            <button onClick={() => setCurrentPage('search')} className={`px-4 py-2 rounded-lg font-medium transition ${currentPage === 'search' ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>書籍検索</button>
-            
-            {/* ★ウィッシュリストへのナビゲーションボタンを追加 */}
-            <button onClick={() => setCurrentPage('wishlist')} className={`px-4 py-2 rounded-lg font-medium transition relative ${currentPage === 'wishlist' ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>
-              ウィッシュリスト
-              {wishlist.length > 0 && <span className="absolute -top-1 -right-1 bg-blue-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">{wishlist.length}</span>}
-            </button>
+    // Create new user
+    const newUser = {
+      ...userData,
+      id: Date.now(),
+      createdAt: new Date().toISOString()
+    };
+    users.push(newUser);
+    localStorage.setItem('users', JSON.stringify(users));
 
-            <button onClick={() => setCurrentPage('cart')} className={`px-4 py-2 rounded-lg font-medium transition relative ${currentPage === 'cart' ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>
-              カート
-              {cart.length > 0 && <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">{cart.reduce((sum, item) => sum + item.quantity, 0)}</span>}
-            </button>
-            <button onClick={() => { if (isAdmin) loadAdminData(); setCurrentPage('admin'); }} className={`px-4 py-2 rounded-lg font-medium transition ${currentPage === 'admin' ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>{isAdmin ? '管理画面' : '管理者ログイン'}</button>
-          </div>
-        </div>
-      </nav>
+    // Auto login
+    const token = `token_${newUser.id}_${Date.now()}`;
+    localStorage.setItem('authToken', token);
+    localStorage.setItem(`user_${token}`, JSON.stringify(newUser));
 
-      <main className="max-w-7xl mx-auto px-4 py-8">
-        {/* --- エラーメッセージ表示 (変更なし) --- */}
-        {errorMessage && ( <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">...</div> )}
+    return { success: true, user: newUser, token };
+  } catch (error) {
+    return { error: error.message };
+  }
+};
 
-        {/* --- 検索ページ --- */}
-        {currentPage === 'search' && (
-          <div>
-            <h2 className="text-3xl font-bold mb-6">書籍を検索</h2>
-            {/* ... 検索フォーム (変更なし) ... */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {searchResults.map((book, index) => (
-                <div key={index} className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-xl transition flex flex-col">
-                  {book.thumbnail && <img src={book.thumbnail} alt={book.title} className="w-full h-64 object-cover" />}
-                  <div className="p-4 flex flex-col flex-grow">
-                    <h3 className="font-bold text-lg mb-2 line-clamp-2 flex-grow">{book.title}</h3>
-                    <p className="text-gray-600 text-sm mb-1">著者: {book.author || '不明'}</p>
-                    <p className="text-gray-600 text-sm mb-1">出版社: {book.publisher || '不明'}</p>
-                    <p className="text-gray-500 text-xs mb-3">ISBN: {book.isbn || 'なし'}</p>
-                    <div className="mt-auto grid grid-cols-2 gap-2">
-                      {/* ★ウィッシュリスト追加ボタン */}
-                      <button onClick={() => handleAddToWishlist(book)} className="w-full px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition font-medium text-sm">
-                        ♡ リスト追加
-                      </button>
-                      <button onClick={() => addToCart(book)} className="w-full px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-medium text-sm">
-                        🛒 カート追加
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+const login = (credentials) => {
+  try {
+    const users = JSON.parse(localStorage.getItem('users') || '[]');
+    const user = users.find(u => 
+      (u.username === credentials.username || u.email === credentials.username) &&
+      u.password === credentials.password
+    );
 
-        {/* ★★★ ウィッシュリストページ (ここから新規追加) ★★★ */}
-        {currentPage === 'wishlist' && (
-          <div>
-            <h2 className="text-3xl font-bold mb-6">ウィッシュリスト</h2>
-            {wishlist.length === 0 ? (
-              <div className="bg-white rounded-lg shadow-md p-12 text-center">
-                <p className="text-gray-500 text-lg">ウィッシュリストは空です</p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {wishlist.map((item) => (
-                  <div key={item.id} className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-xl transition flex flex-col">
-                    {item.thumbnail && <img src={item.thumbnail} alt={item.title} className="w-full h-64 object-cover" />}
-                    <div className="p-4 flex flex-col flex-grow">
-                      <h3 className="font-bold text-lg mb-2 line-clamp-2 flex-grow">{item.title}</h3>
-                      <p className="text-gray-600 text-sm mb-1">著者: {item.author || '不明'}</p>
-                      <p className="text-gray-500 text-xs mb-3">ISBN: {item.isbn || 'なし'}</p>
-                      <div className="mt-auto grid grid-cols-2 gap-2">
-                        <button onClick={() => handleRemoveFromWishlist(item.id)} className="w-full px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition font-medium text-sm">
-                          削除
-                        </button>
-                        <button onClick={() => handleMoveToCart(item)} className="w-full px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-medium text-sm">
-                          🛒 カートへ
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
+    if (!user) {
+      return { error: 'ユーザー名またはパスワードが正しくありません' };
+    }
 
-        {/* --- カートページ (変更なし) --- */}
-        {currentPage === 'cart' && ( <div>...</div> )}
+    // Create token
+    const token = `token_${user.id}_${Date.now()}`;
+    localStorage.setItem('authToken', token);
+    localStorage.setItem(`user_${token}`, JSON.stringify(user));
 
-        {/* --- 管理者ページ (変更なし) --- */}
-        {currentPage === 'admin' && ( <div>...</div> )}
-      </main>
-    </div>
-  );
-}
+    return { success: true, user, token };
+  } catch (error) {
+    return { error: error.message };
+  }
+};
 
-export default App;
+const logout = () => {
+  const token = localStorage.getItem('authToken');
+  if (token) {
+    localStorage.removeItem(`user_${token}`);
+    localStorage.removeItem('authToken');
+  }
+};
+
+const getCurrentUser = () => {
+  const token = localStorage.getItem('authToken');
+  if (!token) return null;
+  
+  const userJson = localStorage.getItem(`user_${token}`);
+  return userJson ? JSON.parse(userJson) : null;
+};
+
+// ================== Wishlist Management ==================
+const getWishlist = () => {
+  const key = getUserDataKey('wishlist');
+  return JSON.parse(localStorage.getItem(key) || '[]');
+};
+
+const addToWishlist = (book) => {
+  try {
+    const wishlist = getWishlist();
+    if (wishlist.find(item => item.isbn === book.isbn)) {
+      return { error: 'この書籍は既にウィッシュリストに追加されています' };
+    }
+    wishlist.push(book);
+    const key = getUserDataKey('wishlist');
+    localStorage.setItem(key, JSON.stringify(wishlist));
+    return { success: true };
+  } catch (error) {
+    return { error: error.message };
+  }
+};
+
+const removeFromWishlist = (isbn) => {
+  const wishlist = getWishlist();
+  const filtered = wishlist.filter(item => item.isbn !== isbn);
+  const key = getUserDataKey('wishlist');
+  localStorage.setItem(key, JSON.stringify(filtered));
+};
+
+// ================== Cart Management (Date-based) ==================
+const getCart = (date = null) => {
+  const currentDate = date || new Date().toISOString().split('T')[0];
+  const key = getUserDataKey(`cart_${currentDate}`);
+  return JSON.parse(localStorage.getItem(key) || '[]');
+};
+
+const getAllCartDates = () => {
+  const token = localStorage.getItem('authToken');
+  const prefix = token ? `cart_${token}_` : 'cart_';
+  const dates = [];
+  
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (key && key.startsWith(prefix)) {
+      const date = key.replace(prefix, '').replace('cart_', '');
+      if (date.match(/^\d{4}-\d{2}-\d{2}$/)) {
+        dates.push(date);
+      }
+    }
+  }
+  
+  return dates.sort().reverse();
+};
+
+const addToCart = (book, date = null) => {
+  try {
+    const currentDate = date || new Date().toISOString().split('T')[0];
+    const cart = getCart(currentDate);
+    const existing = cart.find(item => item.isbn === book.isbn);
+    
+    if (existing) {
+      existing.quantity = (existing.quantity || 1) + 1;
+    } else {
+      cart.push({ ...book, quantity: 1, addedDate: currentDate });
+    }
+    
+    const key = getUserDataKey(`cart_${currentDate}`);
+    localStorage.setItem(key, JSON.stringify(cart));
+    return { success: true };
+  } catch (error) {
+    return { error: error.message };
+  }
+};
+
+const removeFromCart = (isbn, date = null) => {
+  const currentDate = date || new Date().toISOString().split('T')[0];
+  const cart = getCart(currentDate);
+  const filtered = cart.filter(item => item.isbn !== isbn);
+  const key = getUserDataKey(`cart_${currentDate}`);
+  localStorage.setItem(key, JSON.stringify(filtered));
+};
+
+const updateCartQuantity = (isbn, quantity, date = null) => {
+  const currentDate = date || new Date().toISOString().split('T')[0];
+  const cart = getCart(currentDate);
+  const item = cart.find(item => item.isbn === isbn);
+  if (item) {
+    item.quantity = Math.max(1, quantity);
+    const key = getUserDataKey(`cart_${currentDate}`);
+    localStorage.setItem(key, JSON.stringify(cart));
+  }
+};
+
+const clearCart = (date = null) => {
+  const currentDate = date || new Date().toISOString().split('T')[0];
+  const key = getUserDataKey(`cart_${currentDate}`);
+  localStorage.removeItem(key);
+};
+
+// ================== Order History Management ==================
+const saveOrder = (cart, userInfo) => {
+  if (!cart || cart.length === 0) {
+    return;
+  }
+
+  const token = localStorage.getItem('authToken');
+  if (!token) {
+    return;
+  }
+
+  // Get existing orders
+  const ordersKey = `orders_${token}`;
+  const existingOrders = JSON.parse(localStorage.getItem(ordersKey) || '[]');
+
+  // Create new order
+  const newOrder = {
+    id: Date.now(),
+    date: new Date().toISOString(),
+    items: cart,
+    total: cart.reduce((sum, item) => sum + (item.price || 0) * (item.quantity || 1), 0),
+    quantity: cart.reduce((sum, item) => sum + (item.quantity || 1), 0),
+    user: userInfo
+  };
+
+  // Add to orders
+  existingOrders.push(newOrder);
+  localStorage.setItem(ordersKey, JSON.stringify(existingOrders));
+};
+
+const getAllOrders = () => {
+  const token = localStorage.getItem('authToken');
+  if (!token) {
+    return [];
+  }
+
+  const ordersKey = `orders_${token}`;
+  return JSON.parse(localStorage.getItem(ordersKey) || '[]');
+};
+
+// ================== CSV Export ==================
+const exportToCSV = (cart, userInfo = {}) => {
+  if (!cart || cart.length === 0) {
+    throw new Error('カートが空です');
+  }
+
+  // CSV header with BOM for proper Japanese character encoding
+  const BOM = '\uFEFF';
+  const header = ['書名', '著者', '出版社', 'ISBN', '価格', '数量', '小計'].join(',');
+  
+  const rows = cart.map(item => {
+    const row = [
+      `"${item.title || ''}"`,
+      `"${item.author || ''}"`,
+      `"${item.publisher || ''}"`,
+      `"${item.isbn || ''}"`,
+      item.price || 0,
+      item.quantity || 1,
+      (item.price || 0) * (item.quantity || 1)
+    ];
+    return row.join(',');
+  });
+
+  const total = cart.reduce((sum, item) => sum + (item.price || 0) * (item.quantity || 1), 0);
+  const totalRow = `\n合計,,,,,,\"¥${total.toLocaleString()}\"`;
+
+  const csvContent = BOM + header + '\n' + rows.join('\n') + totalRow;
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  
+  return blob;
+};
+
+// Export all functions
+const API = {
+  searchBooks,
+  register,
+  login,
+  logout,
+  getCurrentUser,
+  getWishlist,
+  addToWishlist,
+  removeFromWishlist,
+  getCart,
+  getAllCartDates,
+  addToCart,
+  removeFromCart,
+  updateCartQuantity,
+  clearCart,
+  saveOrder,
+  getAllOrders,
+  exportToCSV
+};
+
+export default API;
