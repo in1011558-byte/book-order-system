@@ -18,13 +18,9 @@ const searchBooks = async (query, searchType = 'title') => {
 
   // Multiple search strategies to find ALL available books
   const searchStrategies = [
-    { q: trimmedQuery, label: '基本検索' },
-    { q: `intitle:${trimmedQuery}`, label: 'タイトル検索' },
-    { q: `intitle:"${trimmedQuery}"`, label: 'タイトル完全一致' },
-    { q: `${trimmedQuery} 巻`, label: '巻数検索' },
-    { q: `${trimmedQuery} 単行本`, label: '単行本検索' },
-    { q: `${trimmedQuery} 小説`, label: '小説検索' },
-    { q: `${trimmedQuery} コミック`, label: 'コミック検索' }
+    { q: trimmedQuery, label: '基本検索', maxPages: 3 },
+    { q: `intitle:${trimmedQuery}`, label: 'タイトル検索', maxPages: 2 },
+    { q: `${trimmedQuery} 巻`, label: '巻数検索', maxPages: 1 }
   ];
 
   const allBooks = new Map(); // Use Map to deduplicate by ISBN
@@ -33,12 +29,25 @@ const searchBooks = async (query, searchType = 'title') => {
     console.log(`Searching with strategy: ${strategy.label}`);
     
     // Fetch multiple pages for each strategy
-    for (let page = 0; page < MAX_PAGES; page++) {
+    const pagesToFetch = strategy.maxPages || MAX_PAGES;
+    for (let page = 0; page < pagesToFetch; page++) {
       const startIndex = page * MAX_RESULTS;
       const url = `${GOOGLE_BOOKS_API}?q=${encodeURIComponent(strategy.q)}&maxResults=${MAX_RESULTS}&startIndex=${startIndex}&langRestrict=ja`;
       
       try {
         const response = await fetch(url);
+        
+        // Check if response is OK
+        if (!response.ok) {
+          console.warn(`API returned ${response.status} for ${strategy.label}`);
+          if (response.status === 429 || response.status === 423) {
+            // Rate limit or locked - wait and skip to next strategy
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            break;
+          }
+          break;
+        }
+        
         const data = await response.json();
         
         if (!data.items || data.items.length === 0) {

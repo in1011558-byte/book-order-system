@@ -77,22 +77,30 @@ function App() {
     }
     
     const genreQueries = {
-      '児童書': '児童書',
-      'マンガ': 'マンガ',
-      '小説': '小説',
-      'ビジネス書': 'ビジネス書',
-      '絵本': '絵本',
-      '実用書': '実用書'
+      '児童書': 'ハリーポッター OR ドラえもん OR かいけつゾロリ',
+      'マンガ': '鬼滅の刃 OR ワンピース OR 進撃の巨人',
+      '小説': '東野圭吾 OR 村上春樹 OR 湊かなえ',
+      'ビジネス書': 'ビジネス書 OR 経営 OR マーケティング',
+      '絵本': 'ぐりとぐら OR はらぺこあおむし OR ノンタン',
+      '実用書': '料理 OR 健康 OR 趣味'
     };
     
     try {
+      console.log(`Loading genre: ${genre}`);
       const result = await API.searchBooks(genreQueries[genre] || genre);
-      setGenreBooks(prev => ({
-        ...prev,
-        [genre]: (result.books || []).slice(0, 10)
-      }));
+      console.log(`${genre} loaded:`, result.books ? result.books.length : 0, 'books');
+      
+      if (result.books && result.books.length > 0) {
+        setGenreBooks(prev => ({
+          ...prev,
+          [genre]: result.books.slice(0, 10)
+        }));
+      } else {
+        setErrorMessage(`${genre}の読み込みに失敗しました`);
+      }
     } catch (error) {
       console.error(`${genre}読み込みエラー:`, error);
+      setErrorMessage(`${genre}の読み込みに失敗しました: ${error.message}`);
     }
   };
 
